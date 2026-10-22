@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exposición Visualización de Datos</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..900&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: escena 3D fija de fondo (ciudad de barras con el dataset) + diapositivas de vidrio encima con transición 3D. Tema único oscuro, para proyector. */
+:root{
+  --bg:#070a14; --glass:rgba(15,20,37,.70); --glass2:rgba(26,33,58,.72); --line:rgba(160,175,230,.18);
+  --fg:#eef1fb; --muted:#a6aeca; --accent:#8ea2ff; --cyan:#4fe3d6;
+  --pbi:#f2c811; --tab:#ff8a3d; --ds:#5aa2ff; --fl:#ff5fa2;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --tool:var(--accent);
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.5;overflow:hidden}
+#gl{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;
+  background:radial-gradient(1200px 700px at 70% 20%,rgba(90,110,255,.18),transparent 60%),radial-gradient(900px 600px at 10% 90%,rgba(255,95,162,.10),transparent 60%),var(--bg)}
+.vignette{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 45%,rgba(3,5,12,.65) 100%)}
+.deck{position:fixed;inset:0;z-index:1;perspective:1600px;pointer-events:none}
+.slide{position:absolute;inset:0;overflow-y:auto;display:none;pointer-events:auto;transform-style:preserve-3d;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 100px}
+.slide.on,.slide.leaving{display:block}
+.slide.leaving{pointer-events:none}
+.slide.pass{pointer-events:none}
+.slide.pass .caption{pointer-events:auto}
+.slide[data-tool="pbi"]{--tool:var(--pbi)} .slide[data-tool="tab"]{--tool:var(--tab)}
+.slide[data-tool="ds"]{--tool:var(--ds)} .slide[data-tool="fl"]{--tool:var(--fl)}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px;min-height:100%;justify-content:center}
+.eyebrow{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--tool);font-weight:600;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:28px;height:2px;background:var(--tool);box-shadow:0 0 12px var(--tool)}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;line-height:1.02}
+h1{font-size:clamp(42px,7.2vw,92px);font-weight:900;font-stretch:118%;letter-spacing:-.01em}
+h2{font-size:clamp(30px,4.6vw,54px);font-weight:850;font-stretch:112%}
+h3{font-size:20px;font-weight:750}
+p{margin:0;max-width:65ch}
+.lead{font-size:clamp(18px,2vw,22px);color:var(--muted)}
+.grad{background:linear-gradient(90deg,var(--pbi),var(--tab),var(--fl),var(--ds),var(--cyan),var(--pbi));background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shift 8s linear infinite}
+@keyframes shift{to{background-position:300% 0}}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+.grid2>*{min-width:0}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}.grid4{grid-template-columns:1fr 1fr}}
+ul.pts{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:9px}
+ul.pts li::marker{color:var(--tool)}
+.panel{position:relative;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);
+  border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0;
+  box-shadow:0 20px 60px -20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06);transition:transform .25s ease,box-shadow .25s ease}
+.panel.glow{box-shadow:0 20px 60px -20px rgba(0,0,0,.6),0 0 0 1px color-mix(in srgb,var(--tool) 35%,transparent),0 0 40px -10px color-mix(in srgb,var(--tool) 45%,transparent)}
+.tilt{transform-style:preserve-3d;will-change:transform}
+.tilt::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:radial-gradient(400px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.09),transparent 45%)}
+.tilt:hover::after{opacity:1}
+.tag{display:inline-block;font-family:var(--mono);font-size:12px;padding:4px 9px;border-radius:999px;background:var(--glass2);border:1px solid var(--line);color:var(--muted)}
+.bigname{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(52px,10vw,128px);line-height:.9;color:var(--tool);
+  text-shadow:1px 1px 0 color-mix(in srgb,var(--tool) 60%,#000),2px 2px 0 color-mix(in srgb,var(--tool) 55%,#000),3px 3px 0 color-mix(in srgb,var(--tool) 50%,#000),4px 4px 0 color-mix(in srgb,var(--tool) 45%,#000),5px 5px 0 color-mix(in srgb,var(--tool) 40%,#000),6px 6px 0 color-mix(in srgb,var(--tool) 35%,#000),7px 7px 0 color-mix(in srgb,var(--tool) 30%,#000),8px 8px 18px rgba(0,0,0,.6),0 0 60px color-mix(in srgb,var(--tool) 45%,transparent);
+  transform-origin:left center;animation:float 6s ease-in-out infinite}
+@keyframes float{0%,100%{transform:perspective(800px) rotateY(-8deg) rotateX(4deg)}50%{transform:perspective(800px) rotateY(6deg) rotateX(-3deg) translateY(-4px)}}
+.facts{display:flex;flex-wrap:wrap;gap:8px}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:start;counter-increment:s}
+.steps li::before{content:counter(s);display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--tool);color:#0a0d18;font-family:var(--mono);font-size:13px;font-weight:600;box-shadow:0 0 14px color-mix(in srgb,var(--tool) 60%,transparent)}
+pre{margin:0;background:rgba(5,8,18,.75);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:13.5px;line-height:1.55}
+.kw{color:var(--tool);font-weight:600}.cmt{color:var(--muted)}.str{color:var(--cyan)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:10px;background:rgba(5,8,18,.45)}
+.kpi b{display:block;font-family:var(--display);font-size:24px;font-variant-numeric:tabular-nums;color:var(--tool);text-shadow:0 0 18px color-mix(in srgb,var(--tool) 45%,transparent)}
+.kpi span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--glass2);color:var(--fg);padding:6px 13px;border-radius:999px;cursor:pointer;transition:transform .15s,background .2s,box-shadow .2s}
+.chip:hover{transform:translateY(-2px)}
+.chip[aria-pressed="true"]{background:var(--tool);border-color:var(--tool);color:#0a0d18;font-weight:700;box-shadow:0 0 18px color-mix(in srgb,var(--tool) 55%,transparent)}
+.chip:focus-visible,.navbtn:focus-visible,select:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.shelf{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center}
+select{font:inherit;font-size:15px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:#121830;color:var(--fg)}
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+.gb{transform-box:fill-box;transform-origin:50% 100%;animation:grow .9s cubic-bezier(.2,.9,.2,1.15) backwards}
+@keyframes grow{from{transform:scaleY(0)}}
+.draw{stroke-dasharray:1;animation:draw 1.3s ease-out backwards}
+@keyframes draw{from{stroke-dashoffset:1}}
+.pop{transform-box:fill-box;transform-origin:center;animation:pop .5s ease-out backwards}
+@keyframes pop{from{transform:scale(0);opacity:0}}
+.fade{animation:fadein .6s ease-out backwards}@keyframes fadein{from{opacity:0}}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:15px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+td.num,th.num{text-align:right}
+tbody tr{transition:background .2s}tbody tr:hover{background:rgba(142,162,255,.08)}
+.race{position:relative;height:186px}
+.race .row{position:absolute;left:0;right:0;height:38px;display:grid;grid-template-columns:100px 1fr;align-items:center;gap:8px;transition:transform .7s cubic-bezier(.5,0,.2,1)}
+.race .bar{height:30px;border-radius:6px;width:0;transition:width .7s cubic-bezier(.5,0,.2,1);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#0a0d18;font-family:var(--mono);font-size:13px;font-weight:700;white-space:nowrap;box-shadow:0 0 18px -2px currentColor}
+.racemonth{font-family:var(--display);font-weight:900;font-size:56px;color:var(--fl);line-height:1;text-shadow:0 0 30px color-mix(in srgb,var(--fl) 60%,transparent)}
+.tools4 .panel{border-top:3px solid var(--c)}
+.tools4 h3{color:var(--c)}
+.tools4 .ico{font-family:var(--display);font-weight:900;font-size:44px;line-height:1;color:var(--c);opacity:.9;text-shadow:0 0 24px var(--c)}
+.cover{display:grid;grid-template-columns:1.25fr 1fr;gap:24px;align-items:center}
+.cover>*{min-width:0}
+@media (max-width:860px){.cover{grid-template-columns:1fr}}
+.cover-meta{display:flex;flex-wrap:wrap;gap:24px;color:var(--muted);font-size:16px}
+.cover-meta b{display:block;color:var(--fg);font-size:18px}
+.hint{font-family:var(--mono);font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.hint kbd{border:1px solid var(--line);border-radius:5px;padding:1px 7px;background:var(--glass2);font-family:var(--mono)}
+/* carrusel 3D de portada */
+.ring{height:330px;perspective:1000px;display:grid;place-items:center}
+.ring-in{position:relative;width:190px;height:230px;transform-style:preserve-3d;animation:spin 18s linear infinite}
+.ring:hover .ring-in{animation-play-state:paused}
+@keyframes spin{from{transform:rotateX(-12deg) rotateY(0)}to{transform:rotateX(-12deg) rotateY(-360deg)}}
+.face{position:absolute;inset:0;border-radius:16px;padding:18px;display:flex;flex-direction:column;justify-content:space-between;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--c) 30%,rgba(15,20,37,.85)),rgba(10,13,26,.88));border:1px solid color-mix(in srgb,var(--c) 55%,transparent);
+  box-shadow:0 0 40px -6px color-mix(in srgb,var(--c) 60%,transparent);transform:rotateY(calc(var(--i)*90deg)) translateZ(170px)}
+.face b{font-family:var(--display);font-weight:900;font-stretch:120%;font-size:28px;line-height:1;color:var(--c)}
+.face span{font-size:14px;color:var(--fg)}
+.face i{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.face .mini{display:flex;align-items:flex-end;gap:5px;height:70px}
+.face .mini u{flex:1;background:var(--c);border-radius:3px 3px 0 0;opacity:.85;text-decoration:none}
+@media (max-width:860px){.ring{height:270px}.ring-in{width:150px;height:190px}.face{transform:rotateY(calc(var(--i)*90deg)) translateZ(130px)}.face b{font-size:22px}}
+/* slide 3D */
+.caption{max-width:430px;margin-top:auto}
+.tip{position:fixed;z-index:6;pointer-events:none;background:rgba(8,11,22,.92);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:14px;transform:translate(-50%,-120%);white-space:nowrap}
+.tip b{font-family:var(--display);font-size:20px;color:var(--cyan)}
+.huge{font-size:clamp(56px,11vw,140px)}
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;background:rgba(8,11,22,.82);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid var(--line);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+.navbtn{font:inherit;font-weight:700;font-size:15px;border:1px solid var(--line);background:var(--glass2);color:var(--fg);border-radius:10px;padding:8px 14px;cursor:pointer}
+.navbtn.primary{background:var(--accent);border-color:var(--accent);color:#0a0d18;box-shadow:0 0 18px -2px var(--accent)}
+.count{font-family:var(--mono);font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.progress{flex:1;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pbi),var(--tab),var(--ds),var(--fl));transition:width .5s}
+.notes{position:fixed;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom,0px));z-index:4;background:rgba(10,13,26,.95);border-top:2px solid var(--accent);max-height:42%;overflow-y:auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px}
+.notes .in{max-width:1120px;margin:0 auto}
+.notes p{max-width:80ch;font-size:16px}
+.slide aside{display:none}
+.src{font-size:13px;color:var(--muted)}
+.src a{color:var(--accent)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<div class="vignette"></div>
+<div class="tip" id="tip" hidden></div>
+
+<div class="deck" id="deck">
+
+<!-- 1 PORTADA -->
+<section class="slide" data-cam="hero">
+<div class="wrap">
+  <div class="cover">
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div class="eyebrow rv">Exposición final · Visualización de datos</div>
+      <h1 class="rv">Un mismo dataset,<br><span class="grad">cuatro herramientas</span></h1>
+      <p class="lead rv">Power BI, Tableau, Looker Studio (hoy Data Studio) y Flourish: qué son, cómo se usan y cuándo elegir cada una, con ejemplos prácticos en vivo.</p>
+      <div class="cover-meta rv">
+        <div><b>Diego Alejandro García Marentes</b>Código 20231025074</div>
+        <div><b>Prof. Héctor Javier Fuentes López</b>Docente</div>
+      </div>
+      <div class="hint rv">Avanza con <kbd>→</kbd> o desliza</div>
+    </div>
+    <div class="ring rv" aria-hidden="true"><div class="ring-in">
+      <div class="face" style="--i:0;--c:var(--pbi)"><b>Power BI</b><div class="mini"><u style="height:40%"></u><u style="height:55%"></u><u style="height:70%"></u><u style="height:95%"></u></div><span>Tableros empresariales</span><i>Microsoft</i></div>
+      <div class="face" style="--i:1;--c:var(--tab)"><b>Tableau</b><div class="mini"><u style="height:90%"></u><u style="height:65%"></u><u style="height:50%"></u><u style="height:35%"></u></div><span>Exploración visual</span><i>Salesforce</i></div>
+      <div class="face" style="--i:2;--c:var(--ds)"><b>Looker Studio</b><div class="mini"><u style="height:30%"></u><u style="height:60%"></u><u style="height:45%"></u><u style="height:80%"></u></div><span>Informes gratis</span><i>Google</i></div>
+      <div class="face" style="--i:3;--c:var(--fl)"><b>Flourish</b><div class="mini"><u style="height:75%"></u><u style="height:35%"></u><u style="height:85%"></u><u style="height:55%"></u></div><span>Historias animadas</span><i>Canva</i></div>
+    </div></div>
+  </div>
+</div>
+</section>
+
+<!-- 2 POR QUE -->
+<section class="slide" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Contexto</div>
+  <h2 class="rv">¿Para qué sirve visualizar datos?</h2>
+  <div class="grid2">
+    <div class="panel tilt rv"><ul class="pts">
+      <li>Una tabla con miles de filas no se entiende a simple vista; un gráfico sí.</li>
+      <li>Permite detectar tendencias, comparar y encontrar valores atípicos rápido.</li>
+      <li>Ayuda a decidir: un gerente mira el tablero, no la base de datos.</li>
+      <li>Las herramientas de <b>Business Intelligence (BI)</b> conectan datos, los limpian y los muestran en tableros interactivos.</li>
+    </ul></div>
+    <div class="panel tilt rv">
+      <span class="lbl">Flujo típico en las 4 herramientas</span>
+      <ol class="steps">
+        <li><span><b>Conectar</b> la fuente: Excel, Google Sheets, base de datos SQL.</span></li>
+        <li><span><b>Transformar</b>: limpiar, cambiar tipos, crear campos.</span></li>
+        <li><span><b>Visualizar</b>: elegir gráficos, colores y filtros.</span></li>
+        <li><span><b>Compartir</b> el tablero o publicarlo en la web.</span></li>
+      </ol>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 3 DATASET -->
+<section class="slide" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Caso práctico</div>
+  <h2 class="rv">Dataset de ejemplo: Café Andino</h2>
+  <p class="lead rv">Una cadena ficticia de cafeterías con ventas mensuales (millones de COP) en cuatro ciudades, enero a junio. Es el mismo archivo que cargamos en cada herramienta.</p>
+  <div class="panel rv"><div class="tablewrap"><table id="dataTable"></table></div></div>
+  <p class="src rv">Datos inventados con fines educativos.</p>
+</div>
+</section>
+
+<!-- 4 DATASET 3D -->
+<section class="slide pass" data-cam="focus">
+<div class="wrap" style="justify-content:flex-end">
+  <div class="panel caption glow rv">
+    <div class="eyebrow">Mismo dataset, en 3D</div>
+    <h3>Cada edificio es una venta</h3>
+    <p>Filas: ciudades. Columnas: meses. Altura: ventas. <b>Arrastra para girar</b> y toca un edificio para ver su valor.</p>
+  </div>
+</div>
+</section>
+
+<!-- 5 POWER BI -->
+<section class="slide" data-tool="pbi" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Herramienta 1 de 4 · Microsoft</div>
+  <div class="bigname rv">Power BI</div>
+  <div class="grid2">
+    <div class="panel tilt rv"><ul class="pts">
+      <li>Plataforma de BI de Microsoft lanzada en 2015 para crear informes y tableros interactivos.</li>
+      <li><b>Power Query</b> limpia y transforma datos; <b>DAX</b> es el lenguaje de fórmulas para crear medidas.</li>
+      <li>Se integra con Excel, Teams, SharePoint y Azure.</li>
+      <li>En 2026 es la capa de BI de <b>Microsoft Fabric</b>, la plataforma de datos unificada de Microsoft.</li>
+      <li><b>Copilot</b> genera informes desde instrucciones escritas y ayuda a escribir DAX.</li>
+    </ul></div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Ficha rápida</span>
+      <div class="facts"><span class="tag">Desktop: gratis (Windows)</span><span class="tag">Pro ≈ 14 USD/usuario/mes</span><span class="tag">DAX + M</span><span class="tag">Ideal: empresas con Microsoft 365</span></div>
+      <p><b>Ventaja:</b> barato, muy completo y pedido en el mercado laboral.</p>
+      <p><b>Desventaja:</b> Desktop solo funciona en Windows y DAX tiene curva de aprendizaje.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 6 POWER BI EJEMPLO -->
+<section class="slide" data-tool="pbi" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Power BI · Ejemplo práctico</div>
+  <h2 class="rv">Tablero de ventas con segmentador</h2>
+  <div class="grid2">
+    <div class="panel rv">
+      <ol class="steps">
+        <li><span><b>Inicio → Obtener datos → Excel</b>, seleccionar la tabla <i>Ventas</i>.</span></li>
+        <li><span>En <b>Power Query</b> verificar que <i>Ventas</i> sea número decimal.</span></li>
+        <li><span>Crear medidas con <b>Nueva medida</b>:</span></li>
+      </ol>
+<pre><span class="kw">Ventas Totales</span> = SUM(Ventas[Ventas])
+
+<span class="kw">Promedio Mensual</span> =
+  AVERAGEX(VALUES(Ventas[Mes]), [Ventas Totales])
+
+<span class="kw">Crecimiento %</span> =
+  DIVIDE(
+    CALCULATE([Ventas Totales], Ventas[Mes]=<span class="str">"Jun"</span>)
+    - CALCULATE([Ventas Totales], Ventas[Mes]=<span class="str">"Ene"</span>),
+    CALCULATE([Ventas Totales], Ventas[Mes]=<span class="str">"Ene"</span>))</pre>
+      <ol class="steps" style="counter-reset:s 3">
+        <li><span>Insertar 3 <b>tarjetas</b>, un <b>gráfico de columnas</b> y un <b>segmentador</b> por Ciudad.</span></li>
+      </ol>
+    </div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Resultado · prueba el segmentador</span>
+      <div class="chips" id="pbiChips"></div>
+      <div class="kpis">
+        <div class="kpi"><span>Ventas totales</span><b id="pbiTot">0</b></div>
+        <div class="kpi"><span>Prom. mensual</span><b id="pbiAvg">0</b></div>
+        <div class="kpi"><span>Crec. ene→jun</span><b id="pbiGr">0</b></div>
+      </div>
+      <svg class="chart" id="pbiChart" viewBox="0 0 420 230" role="img" aria-label="Ventas por mes"></svg>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 7 TABLEAU -->
+<section class="slide" data-tool="tab" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Herramienta 2 de 4 · Salesforce</div>
+  <div class="bigname rv">Tableau</div>
+  <div class="grid2">
+    <div class="panel tilt rv"><ul class="pts">
+      <li>Nació en 2003 en la Universidad de Stanford; Salesforce lo compró en 2019.</li>
+      <li>Se trabaja <b>arrastrando campos</b> a los estantes de Columnas, Filas y Marcas.</li>
+      <li>Famoso por visualizaciones pulidas y exploración visual de grandes volúmenes de datos.</li>
+      <li>En 2026 Salesforce lo integró a su estrategia de agentes de IA (<b>Agentforce</b>) con <b>Tableau Next</b> y <b>Tableau Pulse</b>, que envía métricas e insights automáticos.</li>
+    </ul></div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Ficha rápida</span>
+      <div class="facts"><span class="tag">Tableau Public: gratis (todo queda público)</span><span class="tag">Desktop / Cloud: pago</span><span class="tag">Windows y Mac</span><span class="tag">Ideal: analistas</span></div>
+      <p><b>Ventaja:</b> la mejor para explorar datos visualmente y diseñar gráficos atractivos.</p>
+      <p><b>Desventaja:</b> licencias más caras que Power BI.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 8 TABLEAU EJEMPLO -->
+<section class="slide" data-tool="tab" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Tableau · Ejemplo práctico</div>
+  <h2 class="rv">Arrastrar a los estantes y cambiar la marca</h2>
+  <div class="grid2">
+    <div class="panel rv">
+      <ol class="steps">
+        <li><span><b>Conectar → Microsoft Excel</b>. Tableau separa <b>Dimensiones</b> (Mes, Ciudad) y <b>Medidas</b> (Ventas).</span></li>
+        <li><span>Arrastrar una dimensión a <b>Columnas</b> y <i>SUM(Ventas)</i> a <b>Filas</b>.</span></li>
+        <li><span>En la tarjeta <b>Marcas</b> elegir Barra o Línea.</span></li>
+        <li><span>Crear un <b>campo calculado</b> para clasificar ciudades:</span></li>
+      </ol>
+<pre><span class="cmt">// Análisis → Crear campo calculado</span>
+<span class="kw">IF</span> SUM([Ventas]) >= 250 <span class="kw">THEN</span> <span class="str">"Alta"</span>
+<span class="kw">ELSEIF</span> SUM([Ventas]) >= 150 <span class="kw">THEN</span> <span class="str">"Media"</span>
+<span class="kw">ELSE</span> <span class="str">"Baja"</span>
+<span class="kw">END</span></pre>
+      <ol class="steps" style="counter-reset:s 4"><li><span>Llevar el campo a <b>Color</b> en Marcas y publicar en Tableau Public.</span></li></ol>
+    </div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Resultado · simula los estantes</span>
+      <div class="shelf"><span class="lbl">Columnas</span><div class="chips" id="tabCols"></div></div>
+      <div class="shelf"><span class="lbl">Filas</span><div><span class="tag">SUM(Ventas)</span></div></div>
+      <div class="shelf"><span class="lbl">Marcas</span><div class="chips" id="tabMark"></div></div>
+      <svg class="chart" id="tabChart" viewBox="0 0 420 230" role="img" aria-label="Gráfico Tableau"></svg>
+      <p class="src" id="tabNote"></p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 9 DATA STUDIO -->
+<section class="slide" data-tool="ds" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Herramienta 3 de 4 · Google</div>
+  <div class="bigname rv">Looker Studio</div>
+  <div class="grid2">
+    <div class="panel tilt rv"><ul class="pts">
+      <li>Herramienta <b>gratuita</b> de Google para crear informes y tableros en el navegador.</li>
+      <li>Se conecta directo con Google Sheets, Analytics, Ads, YouTube y BigQuery.</li>
+      <li>Informes compartibles con un enlace, igual que un Google Doc.</li>
+      <li><b>Dato actual:</b> en abril de 2026 Google le devolvió su nombre original, <b>Data Studio</b>. Looker Studio Pro ahora es Data Studio Pro. Los informes existentes no cambian.</li>
+    </ul></div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Ficha rápida</span>
+      <div class="facts"><span class="tag">Gratis</span><span class="tag">100% en el navegador</span><span class="tag">Data Studio 2016 → Looker Studio 2022 → Data Studio 2026</span><span class="tag">Ideal: marketing</span></div>
+      <p><b>Ventaja:</b> gratis, sin instalar nada y muy fácil de compartir.</p>
+      <p><b>Desventaja:</b> menos potente para modelos complejos y lenta con muchos datos.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 10 DATA STUDIO EJEMPLO -->
+<section class="slide" data-tool="ds" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Looker / Data Studio · Ejemplo práctico</div>
+  <h2 class="rv">Informe con controles de filtro</h2>
+  <div class="grid2">
+    <div class="panel rv">
+      <ol class="steps">
+        <li><span>Subir el Excel a <b>Google Sheets</b>.</span></li>
+        <li><span>En lookerstudio.google.com: <b>Crear → Informe → Google Sheets</b>.</span></li>
+        <li><span>Agregar un <b>campo calculado</b> para la región:</span></li>
+      </ol>
+<pre><span class="kw">CASE</span>
+  <span class="kw">WHEN</span> Ciudad <span class="kw">IN</span> (<span class="str">"Bogotá"</span>,<span class="str">"Medellín"</span>) <span class="kw">THEN</span> <span class="str">"Andina"</span>
+  <span class="kw">WHEN</span> Ciudad = <span class="str">"Cali"</span> <span class="kw">THEN</span> <span class="str">"Pacífica"</span>
+  <span class="kw">ELSE</span> <span class="str">"Caribe"</span>
+<span class="kw">END</span></pre>
+      <ol class="steps" style="counter-reset:s 3">
+        <li><span>Insertar un <b>cuadro de resultados</b> y un <b>gráfico de series temporales</b>.</span></li>
+        <li><span>Agregar <b>controles</b> de Región y rango de fechas. Compartir con enlace.</span></li>
+      </ol>
+    </div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Resultado · usa los controles</span>
+      <div class="shelf"><label class="lbl" for="dsReg">Región</label><select id="dsReg"><option>Todas</option><option>Andina</option><option>Pacífica</option><option>Caribe</option></select></div>
+      <div class="shelf"><label class="lbl" for="dsRange">Fechas</label><select id="dsRange"><option value="0-5">Ene – Jun</option><option value="0-2">Ene – Mar</option><option value="3-5">Abr – Jun</option></select></div>
+      <div class="kpis" style="grid-template-columns:1fr 1fr"><div class="kpi"><span>Ventas</span><b id="dsTot">0</b></div><div class="kpi"><span>Ciudades</span><b id="dsN">0</b></div></div>
+      <svg class="chart" id="dsChart" viewBox="0 0 420 230" role="img" aria-label="Serie temporal"></svg>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 11 FLOURISH -->
+<section class="slide" data-tool="fl" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Herramienta 4 de 4 · Canva</div>
+  <div class="bigname rv">Flourish</div>
+  <div class="grid2">
+    <div class="panel tilt rv"><ul class="pts">
+      <li>Herramienta web para crear <b>visualizaciones animadas e interactivas</b> sin programar.</li>
+      <li>Creada en Londres en 2016; Canva la compró en 2022.</li>
+      <li>Trabaja con <b>plantillas</b>: bar chart race, mapas, dispersión, redes, scrollytelling.</li>
+      <li>Muy usada por periodistas para <b>contar historias con datos</b>.</li>
+      <li>No es un BI completo: no tiene modelo de datos ni medidas; su fuerte es la presentación.</li>
+    </ul></div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Ficha rápida</span>
+      <div class="facts"><span class="tag">Plan gratis: proyectos públicos</span><span class="tag">Planes pagos para privados</span><span class="tag">100% en el navegador</span><span class="tag">Ideal: storytelling</span></div>
+      <p><b>Ventaja:</b> resultados vistosos en minutos que se insertan en páginas web.</p>
+      <p><b>Desventaja:</b> no sirve para análisis profundo ni para bases de datos grandes.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 12 FLOURISH EJEMPLO -->
+<section class="slide" data-tool="fl" data-cam="side" data-race>
+<div class="wrap">
+  <div class="eyebrow rv">Flourish · Ejemplo práctico</div>
+  <h2 class="rv">Bar chart race de ventas acumuladas</h2>
+  <div class="grid2">
+    <div class="panel rv">
+      <ol class="steps">
+        <li><span>En flourish.studio: <b>New visualization → Bar chart race</b>.</span></li>
+        <li><span>En <b>Data</b>, pegar una fila por ciudad y una columna por mes (acumulado):</span></li>
+      </ol>
+<pre>Ciudad,       Ene, Feb, Mar, Abr, May, Jun
+Bogotá,        42,  87, 135, 186, 241, 301
+Medellín,      35,  72, 108, 149, 193, 240
+Cali,          22,  46,  73,  99, 129, 162
+Barranquilla,  18,  35,  56,  79, 101, 127</pre>
+      <ol class="steps" style="counter-reset:s 2">
+        <li><span>En <b>Preview</b> ajustar colores, duración y etiquetas.</span></li>
+        <li><span><b>Export &amp; publish</b>: copiar el enlace o el código para insertar.</span></li>
+      </ol>
+    </div>
+    <div class="panel tilt glow rv">
+      <span class="lbl">Resultado · arranca solo, puedes repetir</span>
+      <div style="display:flex;justify-content:space-between;align-items:end;gap:10px;flex-wrap:wrap">
+        <div class="racemonth" id="raceMonth">Jun</div>
+        <button class="chip" id="racePlay" aria-pressed="false">▶ Reproducir</button>
+      </div>
+      <div class="race" id="race"></div>
+      <p class="src">Ventas acumuladas, millones de COP.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- 13 COMPARACION -->
+<section class="slide" data-cam="hero">
+<div class="wrap">
+  <div class="eyebrow rv">Comparación</div>
+  <h2 class="rv">Las cuatro, lado a lado</h2>
+  <div class="panel rv"><div class="tablewrap"><table>
+    <thead><tr><th>Criterio</th><th style="color:var(--pbi)">Power BI</th><th style="color:var(--tab)">Tableau</th><th style="color:var(--ds)">Looker / Data Studio</th><th style="color:var(--fl)">Flourish</th></tr></thead>
+    <tbody>
+      <tr class="rv"><td><b>Empresa</b></td><td>Microsoft</td><td>Salesforce</td><td>Google</td><td>Canva</td></tr>
+      <tr class="rv"><td><b>Versión gratis</b></td><td>Desktop (local)</td><td>Tableau Public</td><td>Sí, completa</td><td>Sí, proyectos públicos</td></tr>
+      <tr class="rv"><td><b>Dónde funciona</b></td><td>Windows + web</td><td>Windows, Mac + web</td><td>Navegador</td><td>Navegador</td></tr>
+      <tr class="rv"><td><b>Fórmulas</b></td><td>DAX</td><td>Campos calculados</td><td>Campos calculados</td><td>No tiene</td></tr>
+      <tr class="rv"><td><b>Dificultad</b></td><td>Media</td><td>Media</td><td>Baja</td><td>Muy baja</td></tr>
+      <tr class="rv"><td><b>IA</b></td><td>Copilot</td><td>Pulse, Tableau Next</td><td>Gemini</td><td>—</td></tr>
+      <tr class="rv"><td><b>Fortaleza</b></td><td>Modelado y empresa</td><td>Exploración visual</td><td>Ecosistema Google</td><td>Animación y narrativa</td></tr>
+    </tbody>
+  </table></div></div>
+</div>
+</section>
+
+<!-- 14 CUAL ELEGIR -->
+<section class="slide" data-cam="side">
+<div class="wrap">
+  <div class="eyebrow rv">Recomendación</div>
+  <h2 class="rv">¿Cuál elegir según el caso?</h2>
+  <div class="grid4 tools4">
+    <div class="panel tilt rv" style="--c:var(--pbi)"><div class="ico">01</div><h3>Power BI</h3><p>Una empresa que usa Excel y Microsoft 365 y necesita tableros para gerencia.</p></div>
+    <div class="panel tilt rv" style="--c:var(--tab)"><div class="ico">02</div><h3>Tableau</h3><p>Un equipo de analistas que explora grandes volúmenes y quiere visuales de alto nivel.</p></div>
+    <div class="panel tilt rv" style="--c:var(--ds)"><div class="ico">03</div><h3>Data Studio</h3><p>Un emprendimiento o área de marketing que quiere reportes gratis desde Sheets o Analytics.</p></div>
+    <div class="panel tilt rv" style="--c:var(--fl)"><div class="ico">04</div><h3>Flourish</h3><p>Un periodista o estudiante que quiere mostrar un resultado de forma llamativa.</p></div>
+  </div>
+</div>
+</section>
+
+<!-- 15 CIERRE -->
+<section class="slide" data-cam="end" data-burst>
+<div class="wrap">
+  <div class="eyebrow rv">Cierre</div>
+  <h2 class="rv">Conclusiones</h2>
+  <div class="panel rv"><ul class="pts" style="font-size:18px">
+    <li>No hay una herramienta “mejor”: cada una responde a una necesidad distinta.</li>
+    <li>Power BI y Tableau dominan el BI empresarial y en 2026 compiten con IA integrada.</li>
+    <li>Data Studio (antes Looker Studio) es la puerta de entrada gratuita.</li>
+    <li>Flourish demuestra que comunicar bien el dato es tan importante como analizarlo.</li>
+    <li>Con el mismo dataset, las cuatro llegan a la misma conclusión: <b>Bogotá lidera y todas las ciudades crecieron de enero a junio</b>.</li>
+  </ul></div>
+  <h1 class="huge grad rv">¿Preguntas?</h1>
+  <p class="src rv">Fuentes: <a href="https://www.dataslayer.ai/es/blog/looker-studio-data-studio-rebrand-2026" target="_blank" rel="noopener">Dataslayer: Looker Studio ahora es Data Studio (2026)</a> · <a href="https://tech-insider.org/tableau-vs-power-bi-2026/" target="_blank" rel="noopener">Tech Insider: Tableau vs Power BI 2026</a> · <a href="https://coefficient.io/power-bi-vs-tableau" target="_blank" rel="noopener">Coefficient: Power BI vs Tableau 2026</a> · Documentación oficial de Microsoft, Tableau, Google y Flourish.</p>
+</div>
+</section>
+
+</div>
+
+
+<nav class="nav" aria-label="Navegación de diapositivas">
+  <button class="navbtn" id="prev" aria-label="Anterior">←</button>
+  <span class="count" id="count"></span>
+  <div class="progress"><i id="bar"></i></div>
+  <button class="navbtn primary" id="next" aria-label="Siguiente">→</button>
+</nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const REDUCE=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MESES=['Ene','Feb','Mar','Abr','May','Jun'];
+const DATA={'Bogotá':[42,45,48,51,55,60],'Medellín':[35,37,36,41,44,47],'Cali':[22,24,27,26,30,33],'Barranquilla':[18,17,21,23,22,26]};
+const CIUDADES=Object.keys(DATA);
+const REGION={'Bogotá':'Andina','Medellín':'Andina','Cali':'Pacífica','Barranquilla':'Caribe'};
+const sum=a=>a.reduce((x,y)=>x+y,0);
+const fmt=n=>'$'+(Math.round(n*10)/10).toLocaleString('es-CO')+' M';
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* ---------- conteo animado ---------- */
+function countTo(el,val,f){const from=el._v||0;el._v=val;if(REDUCE){el.textContent=f(val);return}
+  const t0=performance.now(),d=700;(function step(t){const p=Math.min(1,(t-t0)/d),e=1-Math.pow(1-p,3);el.textContent=f(from+(val-from)*e);if(p<1)requestAnimationFrame(step)})(t0)}
+
+/* ---------- gráficos SVG animados ---------- */
+function niceStep(max){for(const s of [5,10,20,25,50,100,200])if(max/s<=5)return s;return 500}
+function drawChart(svg,labels,vals,type,color){
+  const W=420,H=230,pl=40,pr=12,pt=18,pb=30,iw=W-pl-pr,ih=H-pt-pb;
+  const step=niceStep(Math.max(...vals)),max=Math.ceil(Math.max(...vals)/step)*step||step;
+  const y=v=>pt+ih-(v/max)*ih,n=labels.length,band=iw/n;
+  let s='';
+  for(let t=0;t<=max;t+=step)s+=`<line x1="${pl}" x2="${W-pr}" y1="${y(t)}" y2="${y(t)}" style="stroke:var(--line)"/><text x="${pl-6}" y="${y(t)+4}" text-anchor="end" font-size="11" style="fill:var(--muted);font-family:var(--mono)">${t}</text>`;
+  labels.forEach((l,i)=>s+=`<text x="${pl+band*i+band/2}" y="${H-9}" text-anchor="middle" font-size="12" style="fill:var(--muted)">${l}</text>`);
+  if(type==='bar'){
+    const bw=band*0.6;
+    vals.forEach((v,i)=>{const x=pl+band*i+(band-bw)/2,c=Array.isArray(color)?color[i]:color;
+      s+=`<rect class="gb" x="${x}" y="${y(v)}" width="${bw}" height="${pt+ih-y(v)}" rx="4" style="fill:${c};filter:drop-shadow(0 0 6px ${c}88);animation-delay:${i*70}ms"/>`+
+         `<text class="fade" x="${x+bw/2}" y="${y(v)-6}" text-anchor="middle" font-size="11.5" font-weight="600" style="fill:var(--fg);font-family:var(--mono);animation-delay:${400+i*70}ms">${v}</text>`});
+  }else{
+    const pts=vals.map((v,i)=>[pl+band*i+band/2,y(v)]);
+    const id='g'+Math.random().toString(36).slice(2,7);
+    s+=`<defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".45"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>`;
+    s+=`<path class="fade" d="M${pts[0][0]},${pt+ih} L${pts.map(p=>p.join(',')).join(' L')} L${pts[pts.length-1][0]},${pt+ih} Z" style="fill:url(#${id});animation-delay:300ms"/>`;
+    s+=`<polyline class="draw" pathLength="1" points="${pts.map(p=>p.join(',')).join(' ')}" style="fill:none;stroke:${color};stroke-width:3;filter:drop-shadow(0 0 6px ${color})"/>`;
+    pts.forEach((p,i)=>s+=`<circle class="pop" cx="${p[0]}" cy="${p[1]}" r="${i===pts.length-1?6:4}" style="fill:${color};animation-delay:${200+i*150}ms"/><text class="fade" x="${p[0]}" y="${p[1]-11}" text-anchor="middle" font-size="11.5" font-weight="600" style="fill:var(--fg);font-family:var(--mono);animation-delay:${300+i*150}ms">${vals[i]}</text>`);
+  }
+  svg.innerHTML=s;
+}
+function chips(el,opts,onPick,initial){
+  el.innerHTML='';opts.forEach(o=>{const b=document.createElement('button');b.className='chip';b.textContent=o;b.setAttribute('aria-pressed',String(o===initial));
+    b.onclick=()=>{el.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');onPick(o)};el.appendChild(b)});
+}
+
+/* ---------- tabla ---------- */
+(function(){let h='<thead><tr><th>Ciudad</th>'+MESES.map(m=>`<th class="num">${m}</th>`).join('')+'<th class="num">Total</th></tr></thead><tbody>';
+  CIUDADES.forEach(c=>{h+=`<tr class="rv"><td><b>${c}</b></td>`+DATA[c].map(v=>`<td class="num">${v}</td>`).join('')+`<td class="num"><b style="color:var(--cyan)">${sum(DATA[c])}</b></td></tr>`});
+  document.getElementById('dataTable').innerHTML=h+'</tbody>'})();
+
+/* ---------- Power BI ---------- */
+let pbiSel='Todas';
+function pbiRender(){
+  const list=pbiSel==='Todas'?CIUDADES:[pbiSel];
+  const m=MESES.map((_,i)=>sum(list.map(c=>DATA[c][i])));
+  countTo(document.getElementById('pbiTot'),sum(m),fmt);
+  countTo(document.getElementById('pbiAvg'),sum(m)/6,fmt);
+  countTo(document.getElementById('pbiGr'),(m[5]-m[0])/m[0]*100,v=>'+'+Math.round(v)+'%');
+  drawChart(document.getElementById('pbiChart'),MESES,m,'bar',css('--pbi'));
+}
+chips(document.getElementById('pbiChips'),['Todas',...CIUDADES],o=>{pbiSel=o;pbiRender()},'Todas');
+
+/* ---------- Tableau ---------- */
+let tabCol='Ciudad',tabMark='Barra';
+function tabRender(){
+  const svg=document.getElementById('tabChart'),c=css('--tab');
+  const short=k=>k==='Barranquilla'?'B/quilla':k;
+  if(tabCol==='Ciudad'){
+    const tot=CIUDADES.map(k=>sum(DATA[k]));
+    const cols=tot.map(t=>t>=250?c:t>=150?css('--ds'):css('--muted'));
+    drawChart(svg,CIUDADES.map(short),tot,tabMark==='Barra'?'bar':'line',tabMark==='Barra'?cols:c);
+    document.getElementById('tabNote').textContent='Color por campo calculado: naranja = Alta (≥ 250), azul = Media (≥ 150), gris = Baja.';
+  }else{
+    const m=MESES.map((_,i)=>sum(CIUDADES.map(k=>DATA[k][i])));
+    drawChart(svg,MESES,m,tabMark==='Barra'?'bar':'line',c);
+    document.getElementById('tabNote').textContent='SUM(Ventas) de las 4 ciudades por mes.';
+  }
+}
+chips(document.getElementById('tabCols'),['Ciudad','Mes'],o=>{tabCol=o;tabRender()},'Ciudad');
+chips(document.getElementById('tabMark'),['Barra','Línea'],o=>{tabMark=o;tabRender()},'Barra');
+
+/* ---------- Data Studio ---------- */
+function dsRender(){
+  const reg=document.getElementById('dsReg').value,[a,b]=document.getElementById('dsRange').value.split('-').map(Number);
+  const list=CIUDADES.filter(c=>reg==='Todas'||REGION[c]===reg);
+  const labels=MESES.slice(a,b+1),vals=labels.map((_,j)=>sum(list.map(c=>DATA[c][a+j])));
+  countTo(document.getElementById('dsTot'),sum(vals),fmt);
+  countTo(document.getElementById('dsN'),list.length,v=>String(Math.round(v)));
+  drawChart(document.getElementById('dsChart'),labels,vals,'line',css('--ds'));
+}
+document.getElementById('dsReg').onchange=dsRender;document.getElementById('dsRange').onchange=dsRender;
+
+/* ---------- Flourish bar race ---------- */
+const RACECOL=['#ff5fa2','#c77dff','#5aa2ff','#4fe3d6'];
+const race=document.getElementById('race'),rows={};
+CIUDADES.forEach((c,k)=>{const r=document.createElement('div');r.className='row';r.innerHTML=`<span style="font-weight:700">${c}</span><div><div class="bar" style="background:${RACECOL[k]};color:#0a0d18"></div></div>`;race.appendChild(r);rows[c]=r});
+const ACUM={};CIUDADES.forEach(c=>{let t=0;ACUM[c]=DATA[c].map(v=>t+=v)});
+function raceAt(m){
+  document.getElementById('raceMonth').textContent=MESES[m];
+  const max=Math.max(...CIUDADES.map(c=>ACUM[c][m]));
+  [...CIUDADES].sort((x,y)=>ACUM[y][m]-ACUM[x][m]).forEach((c,i)=>{
+    rows[c].style.transform=`translateY(${i*46}px)`;
+    const bar=rows[c].querySelector('.bar');bar.style.width=Math.max(14,ACUM[c][m]/max*100)+'%';bar.textContent=ACUM[c][m];
+  });
+}
+let raceT=null;const playBtn=document.getElementById('racePlay');
+function stopRace(label){clearInterval(raceT);raceT=null;playBtn.textContent=label;playBtn.setAttribute('aria-pressed','false')}
+function startRace(){
+  if(raceT)clearInterval(raceT);
+  let m=0;raceAt(0);playBtn.textContent='❚❚ Pausar';playBtn.setAttribute('aria-pressed','true');
+  raceT=setInterval(()=>{m++;if(m>5){stopRace('↻ Repetir');return}raceAt(m)},1100);
+}
+playBtn.onclick=()=>{raceT?stopRace('▶ Reproducir'):startRace()};
+
+pbiRender();tabRender();dsRender();raceAt(5);
+
+/* ---------- escena 3D ---------- */
+const G={ok:false};
+(function(){
+  if(!window.THREE)return;
+  const T=THREE,canvas=document.getElementById('gl');
+  let renderer;try{renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:true})}catch(e){return}
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  const scene=new T.Scene();scene.fog=new T.Fog(0x070a14,16,40);
+  const camera=new T.PerspectiveCamera(45,1,.1,120);
+  const group=new T.Group();scene.add(group);
+  const geo=new T.BoxGeometry(.9,1,.9);geo.translate(0,.5,0);
+  const edgeGeo=new T.EdgesGeometry(geo);
+  const bars=[];
+  CIUDADES.forEach((c,j)=>MESES.forEach((m,i)=>{
+    const mat=new T.MeshStandardMaterial({color:0x8ea2ff,roughness:.3,metalness:.35,emissive:0x8ea2ff,emissiveIntensity:.18,transparent:true,opacity:.95});
+    const mesh=new T.Mesh(geo,mat);mesh.position.set((i-2.5)*1.3,0,(j-1.5)*1.6);
+    const edges=new T.LineSegments(edgeGeo,new T.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.18}));mesh.add(edges);
+    mesh.userData={city:c,mes:m,val:DATA[c][i],h:DATA[c][i]/8.5,start:-10,i,j};group.add(mesh);bars.push(mesh);
+  }));
+  const grid=new T.GridHelper(26,52,0x3a4680,0x1a2140);grid.position.y=-.01;group.add(grid);
+  const floor=new T.Mesh(new T.CircleGeometry(9,64),new T.MeshBasicMaterial({color:0x8ea2ff,transparent:true,opacity:.06}));floor.rotation.x=-Math.PI/2;floor.position.y=-.005;group.add(floor);
+  // etiquetas
+  function label(text,col){const cv=document.createElement('canvas');cv.width=320;cv.height=80;const x=cv.getContext('2d');
+    x.font='700 40px Archivo, Arial, sans-serif';x.fillStyle=col;x.textAlign='center';x.textBaseline='middle';x.fillText(text,160,40);
+    const s=new T.Sprite(new T.SpriteMaterial({map:new T.CanvasTexture(cv),transparent:true,depthWrite:false}));s.scale.set(2.2,.55,1);return s}
+  function addLabels(){MESES.forEach((m,i)=>{const s=label(m,'#a6aeca');s.position.set((i-2.5)*1.3,.25,3.7);group.add(s)});
+    CIUDADES.forEach((c,j)=>{const s=label(c,'#eef1fb');s.position.set(-5.4,.3,(j-1.5)*1.6);group.add(s)})}
+  (document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(addLabels);
+  // luces
+  scene.add(new T.AmbientLight(0x8890c0,.55));
+  const dl=new T.DirectionalLight(0xffffff,.9);dl.position.set(6,12,8);scene.add(dl);
+  const pl=new T.PointLight(0x8ea2ff,1.6,30);pl.position.set(0,7,2);scene.add(pl);
+  // estrellas
+  const N=1200,sp=new Float32Array(N*3);for(let k=0;k<N;k++){const r=18+Math.random()*30,t=Math.random()*Math.PI*2,p=Math.acos(2*Math.random()-1);sp[k*3]=r*Math.sin(p)*Math.cos(t);sp[k*3+1]=r*Math.cos(p);sp[k*3+2]=r*Math.sin(p)*Math.sin(t)}
+  const sg=new T.BufferGeometry();sg.setAttribute('position',new T.BufferAttribute(sp,3));
+  const stars=new T.Points(sg,new T.PointsMaterial({color:0xb8c4ff,size:.08,transparent:true,opacity:.8}));scene.add(stars);
+  // explosión final
+  const BN=700,bp=new Float32Array(BN*3),bc=new Float32Array(BN*3),bv=[];
+  const bg=new T.BufferGeometry();bg.setAttribute('position',new T.BufferAttribute(bp,3));bg.setAttribute('color',new T.BufferAttribute(bc,3));
+  const bmat=new T.PointsMaterial({size:.16,vertexColors:true,transparent:true,opacity:0,depthWrite:false});scene.add(new T.Points(bg,bmat));
+  const pal=['#f2c811','#ff8a3d','#5aa2ff','#ff5fa2','#4fe3d6'].map(h=>new T.Color(h));
+  let burstT=-10;
+  G.burst=()=>{for(let k=0;k<BN;k++){bp[k*3]=0;bp[k*3+1]=3;bp[k*3+2]=0;const t=Math.random()*Math.PI*2,p=Math.acos(2*Math.random()-1),s=6+Math.random()*10;
+      bv[k]=[s*Math.sin(p)*Math.cos(t),s*Math.cos(p)+4,s*Math.sin(p)*Math.sin(t)];const c=pal[k%pal.length];bc[k*3]=c.r;bc[k*3+1]=c.g;bc[k*3+2]=c.b}
+    bg.attributes.color.needsUpdate=true;burstT=clock.getElapsedTime()};
+  // colores por herramienta
+  const HUE={def:null,pbi:.135,tab:.065,ds:.6,fl:.93};
+  const DEF=['#4fe3d6','#8ea2ff','#c77dff','#ff5fa2'].map(h=>new T.Color(h));
+  let targetCols=DEF.slice(),targetLight=new T.Color('#8ea2ff');
+  G.setTool=tool=>{const h=HUE[tool];
+    if(h==null){targetCols=DEF.slice();targetLight=new T.Color('#8ea2ff')}
+    else{targetCols=[0,1,2,3].map(j=>new T.Color().setHSL(h,.9,.62-j*.09));targetLight=new T.Color().setHSL(h,.9,.6)}};
+  // cámara
+  const wide=()=>innerWidth/innerHeight>1.1;
+  const CAMS={hero:{p:[9,7,12],l:[0,2.4,0],gx:()=>wide()?3:0},side:{p:[5,6,15],l:[0,2.2,0],gx:()=>wide()?6.5:0},
+    focus:{p:[8,7.5,10],l:[0,2.2,0],gx:()=>0},end:{p:[0,13,12],l:[0,2,0],gx:()=>0}};
+  let cam=CAMS.hero;const camPos=new T.Vector3(14,10,18),look=new T.Vector3(0,2,0);
+  G.setCam=k=>{cam=CAMS[k]||CAMS.side;interactive=k==='focus';if(!interactive){tip.hidden=true}};
+  G.grow=()=>{const t=clock.getElapsedTime();bars.forEach(b=>b.userData.start=t+(b.userData.i+b.userData.j)*.07)};
+  // interacción
+  let interactive=false,drag=false,lx=0,ly=0,userRot=0,rotX=0,autoRot=true;
+  const ray=new T.Raycaster(),mouse=new T.Vector2(),tip=document.getElementById('tip');let hovered=null;
+  function pick(e){if(!interactive)return;const r=canvas.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+    ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(bars,false)[0];
+    if(hovered&&hovered!==(hit&&hit.object))hovered.material.emissiveIntensity=.18;
+    if(hit){hovered=hit.object;hovered.material.emissiveIntensity=.8;const u=hovered.userData;
+      tip.innerHTML=`${u.city} · ${u.mes}<br><b>$${u.val} M</b>`;tip.style.left=e.clientX+'px';tip.style.top=e.clientY+'px';tip.hidden=false}
+    else{hovered=null;tip.hidden=true}}
+  canvas.addEventListener('pointerdown',e=>{if(!interactive)return;drag=true;autoRot=false;lx=e.clientX;ly=e.clientY;pick(e)});
+  addEventListener('pointerup',()=>drag=false);
+  canvas.addEventListener('pointermove',e=>{if(!interactive)return;if(drag){userRot+=(e.clientX-lx)*.01;rotX=Math.max(-.35,Math.min(.5,rotX+(e.clientY-ly)*.004));lx=e.clientX;ly=e.clientY}pick(e)});
+  canvas.style.touchAction='none';
+  function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
+  addEventListener('resize',resize);resize();
+  const clock=new T.Clock();let rot=0;
+  const ease=p=>1-Math.pow(1-p,3)*(1-p*.0);
+  function loop(){
+    const dt=Math.min(clock.getDelta(),.05),t=clock.getElapsedTime(),k=1-Math.exp(-dt*2.2);
+    camPos.lerp(new T.Vector3(...cam.p),k);look.lerp(new T.Vector3(...cam.l),k);camera.position.copy(camPos);camera.lookAt(look);
+    group.position.x+=(cam.gx()-group.position.x)*k;
+    if(!REDUCE&&(autoRot||!interactive))rot+=dt*(interactive?.08:.12);
+    group.rotation.y=rot+(interactive?userRot:0);group.rotation.x+=((interactive?rotX:0)-group.rotation.x)*k;
+    bars.forEach(b=>{const u=b.userData;let p=REDUCE?1:Math.min(1,Math.max(0,(t-u.start)/1.1));const e=p<1?1-Math.pow(1-p,3)+Math.sin(p*Math.PI)*.12:1;
+      b.scale.y=Math.max(.001,u.h*(.08+.92*e));
+      if(b!==hovered){b.material.color.lerp(targetCols[u.j],dt*3);b.material.emissive.lerp(targetCols[u.j],dt*3)}});
+    pl.color.lerp(targetLight,dt*3);pl.position.x=Math.sin(t*.6)*5;pl.position.z=Math.cos(t*.6)*5;
+    stars.rotation.y=t*.01;stars.rotation.x=Math.sin(t*.05)*.1;
+    const bt=t-burstT;if(bt<4.5){for(let q=0;q<BN;q++){const v=bv[q];bp[q*3]+=v[0]*dt;bp[q*3+1]+=v[1]*dt;bp[q*3+2]+=v[2]*dt;v[0]*=.985;v[2]*=.985;v[1]=v[1]*.985-6*dt}
+      bg.attributes.position.needsUpdate=true;bmat.opacity=Math.max(0,1-bt/4.5)}else bmat.opacity=0;
+    renderer.render(scene,camera);requestAnimationFrame(loop)}
+  G.ok=true;G.grow();loop();
+})();
+
+/* ---------- inclinación 3D de paneles ---------- */
+if(matchMedia('(hover:hover)').matches&&!REDUCE){
+  document.querySelectorAll('.tilt').forEach(el=>{
+    el.addEventListener('pointermove',e=>{const r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+      el.style.transform=`perspective(900px) rotateX(${(.5-y)*8}deg) rotateY(${(x-.5)*10}deg) translateZ(6px)`;el.style.setProperty('--mx',x*100+'%');el.style.setProperty('--my',y*100+'%')});
+    el.addEventListener('pointerleave',()=>{el.style.transform=''});
+  });
+}
+
+/* ---------- navegación con transición 3D ---------- */
+const slides=[...document.querySelectorAll('.slide')];let cur=-1;
+function reveal(sl){
+  if(REDUCE)return;
+  sl.querySelectorAll('.rv').forEach((el,k)=>el.animate([{opacity:0,transform:'translateY(34px) rotateX(-28deg) scale(.96)'},{opacity:1,transform:'none'}],
+    {duration:750,delay:180+k*75,easing:'cubic-bezier(.2,.8,.2,1)',fill:'backwards'}));
+}
+function go(i){
+  i=Math.max(0,Math.min(slides.length-1,i));if(i===cur)return;
+  const dir=i>cur?1:-1,prev=slides[cur],next=slides[i];
+  if(prev){prev.classList.remove('on');
+    if(!REDUCE){prev.classList.add('leaving');const a=prev.animate([{opacity:1,transform:'none'},{opacity:0,transform:`translateX(${-dir*35}%) rotateY(${dir*55}deg) translateZ(-500px)`}],{duration:650,easing:'cubic-bezier(.6,0,.4,1)'});a.onfinish=()=>prev.classList.remove('leaving')}}
+  cur=i;next.classList.add('on');next.scrollTop=0;
+  if(!REDUCE&&prev)next.animate([{opacity:0,transform:`translateX(${dir*35}%) rotateY(${-dir*55}deg) translateZ(-500px)`},{opacity:1,transform:'none'}],{duration:800,easing:'cubic-bezier(.2,.8,.2,1)'});
+  reveal(next);
+  // re-animar gráficos de la diapositiva
+  next.querySelectorAll('svg.chart').forEach(s=>{s.innerHTML=s.innerHTML});
+  document.getElementById('count').textContent=(cur+1)+' / '+slides.length;
+  document.getElementById('bar').style.width=((cur+1)/slides.length*100)+'%';
+  if(G.ok){G.setTool(next.dataset.tool||'def');G.setCam(next.dataset.cam||'side');G.grow();if(next.hasAttribute('data-burst'))setTimeout(()=>G.burst(),500)}
+  if(next.hasAttribute('data-race'))setTimeout(startRace,900);else if(raceT)stopRace('▶ Reproducir');
+}
+document.getElementById('prev').onclick=()=>go(cur-1);
+document.getElementById('next').onclick=()=>go(cur+1);
+document.addEventListener('keydown',e=>{if(e.target.tagName==='SELECT')return;
+  if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();go(cur+1)}
+  else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(cur-1)}});
+let tx=null,ty=null;
+const deck=document.getElementById('deck');
+deck.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+deck.addEventListener('touchend',e=>{if(tx===null)return;const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
+  if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5&&!e.target.closest('.tablewrap,pre'))go(cur+(dx<0?1:-1));tx=null},{passive:true});
+go(0);
+</script>
+</body>
+</html>
